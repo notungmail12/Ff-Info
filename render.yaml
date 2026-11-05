@@ -1,0 +1,38 @@
+# Render Blueprint for FFINFO Bot (HL Gaming API).
+# Runs as a free Web Service. The bot opens a tiny health endpoint on $PORT automatically.
+# Free services sleep after ~15 min of no traffic: ping the service URL every 5-10 min
+# (UptimeRobot / cron-job.org) to keep it awake.
+# For a paid always-on worker, replace the `type: web` block's first lines with:
+#   - type: worker
+#     plan: starter
+# and delete `healthCheckPath`.
+services:
+  - type: web
+    name: ffinfo-bot
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      # --- required (Render asks you for these values on first deploy) ---
+      - key: BOT_TOKEN
+        sync: false
+      - key: HL_USER_UID
+        sync: false
+      - key: HL_API_KEY
+        sync: false
+      # --- optional: leave empty to skip, fill in the Render dashboard later ---
+      - key: FORCE_CHANNELS
+        sync: false
+      - key: TARGET_GROUP
+        sync: false
+      - key: START_PHOTO
+        sync: false
+      - key: COOLDOWN_SECONDS
+        value: "5"
+      - key: HL_IMAGES
+        value: "1"
