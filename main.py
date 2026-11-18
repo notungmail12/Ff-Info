@@ -755,16 +755,41 @@ def fetch_player(uid, region):
 # FORCE_CHANNELS: comma separated, e.g. "@mychannel" or "@a,@b" (or numeric -100... ids).
 # FORCE_JOIN_LINKS: optional comma separated join links in the same order (needed for numeric
 # ids / private channels). Defaults to https://t.me/<username> for @username channels.
-FORCE_CHANNELS = [c.strip() for c in os.getenv("FORCE_CHANNELS", "").split(",") if c.strip()]
+FORCE_CHANNELS = [
+    (c.strip() if (c.strip().startswith("@") or c.strip().lstrip("-").isdigit()) else "@" + c.strip())
+    for c in os.getenv("FORCE_CHANNELS", "").split(",") if c.strip()
+]
 FORCE_JOIN_LINKS = [c.strip() for c in os.getenv("FORCE_JOIN_LINKS", "").split(",") if c.strip()]
 JOINED_STATUSES = {"member", "administrator", "creator", "owner"}
 
 
-def channel_link(index):
+_LINK_CACHE = {}
+
+
+async def channel_link(bot, index):
+    """Join URL for FORCE_CHANNELS[index]. Uses FORCE_JOIN_LINKS, then @username, then asks Telegram
+    (public username / existing invite link / a newly created invite link; bot must be channel admin)."""
     if index < len(FORCE_JOIN_LINKS):
         return FORCE_JOIN_LINKS[index]
     ch = FORCE_CHANNELS[index]
-    return f"https://t.me/{ch.lstrip('@')}" if not ch.lstrip("-").isdigit() else None
+    if not ch.lstrip("-").isdigit():
+        return f"https://t.me/{ch.lstrip('@')}"
+    if ch in _LINK_CACHE:
+        return _LINK_CACHE[ch]
+    link = None
+    try:
+        chat = await bot.get_chat(int(ch))
+        if getattr(chat, "username", None):
+            link = f"https://t.me/{chat.username}"
+        else:
+            link = getattr(chat, "invite_link", None)
+            if not link:
+                link = await bot.export_chat_invite_link(int(ch))
+    except Exception as exc:
+        log.error("Could not get join link for %s (make the bot admin or set FORCE_JOIN_LINKS): %s", ch, type(exc).__name__)
+    if link:
+        _LINK_CACHE[ch] = link
+    return link
 
 
 async def not_joined_channels(bot, user_id):
@@ -781,10 +806,10 @@ async def not_joined_channels(bot, user_id):
     return missing
 
 
-def join_keyboard(missing):
+async def join_keyboard(bot, missing):
     rows = []
     for i in missing:
-        link = channel_link(i)
+        link = await channel_link(bot, i)
         if link:
             label = f"📢 Join {FORCE_CHANNELS[i]}" if FORCE_CHANNELS[i].startswith("@") else "📢 Join Channel"
             rows.append([InlineKeyboardButton(label, url=link)])
@@ -884,7 +909,7 @@ async def ffinfo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await message.reply_text("⚠️ চ্যানেল যাচাই করা যাচ্ছে না। অ্যাডমিনকে জানান।")
             return
         if missing:
-            await message.reply_text(JOIN_TEXT, parse_mode="HTML", reply_markup=join_keyboard(missing))
+            await message.reply_text(JOIN_TEXT, parse_mode="HTML", reply_markup=await join_keyboard(context.bot, missing))
             return
 
     if len(context.args) < 1:
