@@ -777,16 +777,25 @@ async def channel_link(bot, index):
     if ch in _LINK_CACHE:
         return _LINK_CACHE[ch]
     link = None
+    cid = int(ch)
     try:
-        chat = await bot.get_chat(int(ch))
+        chat = await bot.get_chat(cid)
         if getattr(chat, "username", None):
             link = f"https://t.me/{chat.username}"
         else:
             link = getattr(chat, "invite_link", None)
-            if not link:
-                link = await bot.export_chat_invite_link(int(ch))
     except Exception as exc:
-        log.error("Could not get join link for %s (make the bot admin or set FORCE_JOIN_LINKS): %s", ch, type(exc).__name__)
+        log.error("get_chat failed for %s: %s %s", ch, type(exc).__name__, exc)
+    if not link:
+        for method in ("export_chat_invite_link", "create_chat_invite_link"):
+            try:
+                res = await getattr(bot, method)(cid)
+                link = res if isinstance(res, str) else res.invite_link
+                if link:
+                    break
+            except Exception as exc:
+                log.error("%s failed for %s (give the bot 'Invite users via link' admin right, "
+                          "or set FORCE_JOIN_LINKS): %s %s", method, ch, type(exc).__name__, exc)
     if link:
         _LINK_CACHE[ch] = link
     return link
